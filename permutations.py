@@ -9,7 +9,9 @@ def shuffle_returns(config, strategy_param, weights):
     prices = Data.data
     returns = ((prices[1:, :] - prices[:-1, :])/ prices[:-1, :]) + 1
     new_returns = np.random.permutation(returns)
-    returns_to_prices = np.cumprod(new_returns, axis=1)
+    buy_and_hold_test = np.prod(new_returns, axis=0)
+    print(buy_and_hold_test)
+    returns_to_prices = np.cumprod(new_returns, axis=0)
     print(prices[0:1, :].shape, returns_to_prices.shape)
     new_prices = np.vstack((prices[0:1,:], (prices[0:1,:] * returns_to_prices)))
     random_execution = en.Execution(new_prices, Data.dates, config["assets"], config["balance"], weights, en.MovingAverage(*strategy_param))
@@ -19,7 +21,8 @@ def shuffle_returns(config, strategy_param, weights):
     return {"equity_curve": random_equity_curve,
             "sharpe": random_execution.results.sharpe,
             "profit_factor": random_equity_curve[-1]/random_equity_curve[0] - 1,
-            "dates": Data.dates}
+            "dates": Data.dates,
+            "execution": random_execution}
 
 
 

@@ -33,12 +33,15 @@ def get_sidebar_inputs():
     end_date = st.sidebar.text_input("End Date", "2025-01-01")
     
     optimization_goal = None
-    perms = None
     if testing_choice == "Optimization":
         optimization_goal = st.sidebar.selectbox(
             "Pick the result you want to Optimize",
             OPTIMIZATION_GOALS,
         )
+    perms = None
+    permutation_choice = st.sidebar.toggle("Run Permutation Tests?")
+    st.session_state.permutation_choice = permutation_choice
+    if permutation_choice:
         perms = st.sidebar.slider("How many Permutations", 1, 2500, 1000)
     view_type = None
     if testing_choice == "View Experiments":
@@ -147,7 +150,7 @@ def render_position_metrics(execution, label):
     st.write(f"Percent Gain By Strategy: {execution.results.percent_gain:.2f}")
 
 
-def render_backtest_results(execution, assets, config):
+def render_backtest_results(execution, assets):
     asset_labels = assets + [None]
     for asset_name in asset_labels:
         asset_index = assets.index(asset_name) if asset_name is not None else None
@@ -185,8 +188,6 @@ def render_backtest_results(execution, assets, config):
         st.write("")
         st.write("")
     st.write(st.session_state.save_backtest)
-    st.session_state.save_backtest = True
-    save_loadout(execution, assets, config)
 
 
 
@@ -269,8 +270,19 @@ def run_backtest_dashboard(config):
             strategy=strategy,
         )
         execution.execute()
+        execution.results.stats()
+        equity_curve = np.sum(execution.results.equity_curves, axis=1)
+        sharpe = execution.results.sharpe
+        profit_factor = equity_curve[-1]/equity_curve[0] - 1
+        original_metrics = [sharpe, profit_factor, dates, equity_curve]
         
-        render_backtest_results(execution, assets, config)
+        
+        render_backtest_results(execution, assets)    
+        st.session_state.save_backtest = True
+        save_loadout(execution, assets, config)
+        if st.session_state.permutation_choice:
+            st.title("Permutation Testing")
+            permutation_graphs(config, strategy_params, weights, original_metrics, config["perms"])
 
 
 def run_optimization_dashboard(config):
@@ -287,6 +299,7 @@ def run_optimization_dashboard(config):
         weights = normalize_weights(raw_weights)
         for i, asset in enumerate(config["assets"]):
             st.write(f"Best Weight for {asset}: {weights[i]: .2f}")
+        config["weights"] = weights
 
         optimized_execution = Execution(
             prices,
@@ -314,7 +327,8 @@ def run_optimization_dashboard(config):
             "Average Win": abs(optimized_execution.results.avg_win),
         }
         st.write(f"Best {goal} Calculated: {optimization_dict[goal]:.2f}")
-        permutation_graphs(config, strategy_param, weights, original_metrics,)
+        if st.session_state.permutation_choice:
+            permutation_graphs(config, strategy_param, weights, original_metrics, iterations = config["perms"])
 
 
 
@@ -326,34 +340,69 @@ def permutation_graphs(config, strategy_param, weights, original_metrics, iterat
     sharpes = [original_metrics[0]]
     profit_factors = [original_metrics[1]]
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-            x = list(original_metrics[2]),
-            y = list(original_metrics[3]),
-            mode = "lines",
-            name = "Original Equity Curve"
-        ))
+
     for i in range(iterations):
+        print("\n\nIteration", i, "\n\n")
         permuted_results = pm.shuffle_returns(config, strategy_param, weights)
+        if i in (90000, 90001):
+            render_backtest_results(permuted_results["execution"], config["assets"])
         sharpes.append(permuted_results["sharpe"])
         profit_factors.append(permuted_results["profit_factor"])
         fig.add_trace(go.Scatter(
             x = list(permuted_results["dates"]),
             y = list(permuted_results["equity_curve"]),
             mode = "lines",
-            name = f"Random Equity Curve {i}"
+            name = f"Random Equity Curve {i}",
+            line = dict(color = "grey")
         ))
+        fig.add_trace(go.Scatter(
+            x = list(original_metrics[2]),
+            y = list(original_metrics[3]),
+            mode = "lines",
+            name = "Original Equity Curve",
+            line = dict(color = "purple")
+        ))
+
     fig.update_layout(
         title = "Equity Curve Permutations",
         xaxis_title = "Date",
         yaxis_title = "Equity",
         dragmode = "pan"
     )
+
     st.plotly_chart(
                 fig,
                 use_container_width=True,
                 config={"scrollZoom": True, "displayModeBar": True, "displaylogo": False}
                 )
+    
+    left, right = st.columns(2)
+    with left:
+        fig = go.Figure()
+        fig.add_trace(go.Histogram(x=sharpes, nbinsx= 300, name="Distribution of Sharpes"))
+        fig.add_vline(x = sharpes[0], line_color = "red", line_width = 3, annotation_text = "Original")
+        fig.update_layout(dragmode = "pan", xaxis_title = "Sharpes", yaxis_title = "Count")
+        st.plotly_chart(
+            fig, 
+            config={"scrollZoom": True, "displayModeBar": True, "displaylogo": False}
+)
+        better = np.sum(sharpes[1:] > sharpes[0])
+        total = len(sharpes[1:])
+        st.write(f"{better} permutations out of {total} were better than the original")
 
+    with right:
+        fig = go.Figure()
+        fig.add_trace(go.Histogram(x=profit_factors, nbinsx= 300, name="Distribution of Profits"))
+        fig.add_vline(x = profit_factors[0], line_color = "red", line_width = 3, annotation_text = "Original")
+        fig.update_layout(dragmode = "pan", xaxis_title = "Profit Factors", yaxis_title = "Count")
+
+        st.plotly_chart(
+            fig, 
+            config={"scrollZoom": True, "displayModeBar": True, "displaylogo": False}
+)
+        better = np.sum(profit_factors[1:] > profit_factors[0])
+        total = len(profit_factors[1:])
+        st.write(f"{better} permutations out of {total} were better than the original")
 
 
 
