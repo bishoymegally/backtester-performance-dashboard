@@ -6,6 +6,7 @@ import experiments as ex
 import pandas as pd
 from Engine import *
 import Optimizer as op
+import permutations as pm
 
 ASSET_OPTIONS = ["AAPL", "MSFT", "NVDA", "SPY", "XLE", "XLF", "XLV", "XLK", "QQQ", "IWM"]
 STRATEGY_REGISTRY = {
@@ -32,12 +33,13 @@ def get_sidebar_inputs():
     end_date = st.sidebar.text_input("End Date", "2025-01-01")
     
     optimization_goal = None
+    perms = None
     if testing_choice == "Optimization":
         optimization_goal = st.sidebar.selectbox(
             "Pick the result you want to Optimize",
             OPTIMIZATION_GOALS,
         )
-        perms = st.slider("How many Permutations", 1, 2500, 1000)
+        perms = st.sidebar.slider("How many Permutations", 1, 2500, 1000)
     view_type = None
     if testing_choice == "View Experiments":
         view_type = st.selectbox("What kind of Data View would you like:", VIEW_TYPES)
@@ -296,21 +298,63 @@ def run_optimization_dashboard(config):
         )
         optimized_execution.execute()
         optimized_execution.results.stats()
+        original_equity_curve = np.sum(optimized_execution.results.equity_curves, axis = 1)
+        profit_factor = original_equity_curve[-1] / original_equity_curve[0] - 1
+
+        original_metrics = [abs(optimized_execution.results.sharpe), profit_factor, optimized_execution.data.dates, original_equity_curve ]
+        strategy_param = [int(round(out.x[0])), int(round(out.x[1]))]
+
 
         optimization_dict = {
-            "Sharpe Ratio": -optimized_execution.results.sharpe,
-            "Max Drawdown": -optimized_execution.results.max_drawdown,
-            "Loss Rate": optimized_execution.results.loss_rate,
-            "Trade Expectancy": -optimized_execution.results.expectancy,
-            "Average Loss": -optimized_execution.results.avg_loss,
-            "Average Win": -optimized_execution.results.avg_win,
+            "Sharpe Ratio": abs(optimized_execution.results.sharpe),
+            "Max Drawdown": -abs(optimized_execution.results.max_drawdown),
+            "Loss Rate": abs(optimized_execution.results.loss_rate),
+            "Trade Expectancy": abs(optimized_execution.results.expectancy),
+            "Average Loss": -abs(optimized_execution.results.avg_loss),
+            "Average Win": abs(optimized_execution.results.avg_win),
         }
         st.write(f"Best {goal} Calculated: {optimization_dict[goal]:.2f}")
+        permutation_graphs(config, strategy_param, weights, original_metrics,)
 
 
 
-def permutations(config, strategy_param, weights):
-    pass 
+def permutation_graphs(config, strategy_param, weights, original_metrics, iterations = 50):
+    # permutation file should return the data needed, this function should take that data and create the graphs needed
+    # this function should be looping for N permutations, the for loop should not be in the permutations file, that file should run the permutation once
+    
+    
+    sharpes = [original_metrics[0]]
+    profit_factors = [original_metrics[1]]
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+            x = list(original_metrics[2]),
+            y = list(original_metrics[3]),
+            mode = "lines",
+            name = "Original Equity Curve"
+        ))
+    for i in range(iterations):
+        permuted_results = pm.shuffle_returns(config, strategy_param, weights)
+        sharpes.append(permuted_results["sharpe"])
+        profit_factors.append(permuted_results["profit_factor"])
+        fig.add_trace(go.Scatter(
+            x = list(permuted_results["dates"]),
+            y = list(permuted_results["equity_curve"]),
+            mode = "lines",
+            name = f"Random Equity Curve {i}"
+        ))
+    fig.update_layout(
+        title = "Equity Curve Permutations",
+        xaxis_title = "Date",
+        yaxis_title = "Equity",
+        dragmode = "pan"
+    )
+    st.plotly_chart(
+                fig,
+                use_container_width=True,
+                config={"scrollZoom": True, "displayModeBar": True, "displaylogo": False}
+                )
+
+
 
 
 
