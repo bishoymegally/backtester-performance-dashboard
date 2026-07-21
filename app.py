@@ -40,6 +40,7 @@ def get_sidebar_inputs():
         )
     perms = None
     permutation_choice = st.sidebar.toggle("Run Permutation Tests?")
+    print(permutation_choice)
     st.session_state.permutation_choice = permutation_choice
     if permutation_choice:
         perms = st.sidebar.slider("How many Permutations", 1, 2500, 1000)
@@ -355,7 +356,7 @@ def permutation_graphs(config, strategy_param, weights, original_metrics, iterat
             name = f"Random Equity Curve {i}",
             line = dict(color = "grey")
         ))
-        fig.add_trace(go.Scatter(
+    fig.add_trace(go.Scatter(
             x = list(original_metrics[2]),
             y = list(original_metrics[3]),
             mode = "lines",
