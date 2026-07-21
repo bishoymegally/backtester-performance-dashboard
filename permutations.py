@@ -6,7 +6,7 @@ import Engine as en
 
 def shuffle_returns(config, strategy_param, weights):
     Data = AssetChoosing(config["assets"], config["start_date"], config["end_date"])
-    prices = Data.data
+    prices = Data.data[0]
     returns = ((prices[1:, :] - prices[:-1, :])/ prices[:-1, :]) + 1
     new_returns = np.random.permutation(returns)
     buy_and_hold_test = np.prod(new_returns, axis=0)
@@ -14,7 +14,7 @@ def shuffle_returns(config, strategy_param, weights):
     returns_to_prices = np.cumprod(new_returns, axis=0)
     print(prices[0:1, :].shape, returns_to_prices.shape)
     new_prices = np.vstack((prices[0:1,:], (prices[0:1,:] * returns_to_prices)))
-    random_execution = en.Execution(new_prices, Data.dates, config["assets"], config["balance"], weights, en.MovingAverage(*strategy_param))
+    random_execution = en.Execution([new_prices, Data.highs, Data.lows], Data.dates, config["assets"], config["balance"], weights, en.MovingAverage(*strategy_param))
     random_execution.execute()
     random_execution.results.stats()
     random_equity_curve = np.sum(random_execution.results.equity_curves, axis= 1)

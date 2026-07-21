@@ -38,6 +38,7 @@ def get_sidebar_inputs():
             "Pick the result you want to Optimize",
             OPTIMIZATION_GOALS,
         )
+        AssetChoosing
     perms = None
     permutation_choice = st.sidebar.toggle("Run Permutation Tests?")
     st.session_state.permutation_choice = permutation_choice
@@ -144,7 +145,7 @@ def render_position_metrics(execution, label):
     st.subheader(f"Metrics for {label}", text_alignment="center")
     st.write(f"Mean of Returns: {execution.results.mean_return * 100:.6f}%")
     st.write(f"Standard Deviation: {execution.results.std_return * 100:.6f}%")
-    st.write(f"IQR: {execution.results.iqr:.6f}")
+    st.write(f"IQR: {execution.results.iqr:.8f}")
     st.write(f"The Sharpe Ratio: {execution.results.sharpe:.2f}")
     st.write(f"Total Profit: {execution.results.total_profit:.2f}")
     st.write(f"Percent Gain By Strategy: {execution.results.percent_gain:.2f}")
@@ -288,6 +289,7 @@ def run_backtest_dashboard(config):
 def run_optimization_dashboard(config):
     if st.sidebar.button("Start Optimization Testing"):
         prices, dates, assets = load_price_data(config["assets"], config["start_date"], config["end_date"])
+        prices = prices[0]
         goal = config["optimization_goal"] or "Sharpe Ratio"
         out = op.Optimize(prices, dates, assets, config["balance"], MovingAverage, goal)
 
@@ -355,7 +357,7 @@ def permutation_graphs(config, strategy_param, weights, original_metrics, iterat
             name = f"Random Equity Curve {i}",
             line = dict(color = "grey")
         ))
-        fig.add_trace(go.Scatter(
+    fig.add_trace(go.Scatter(
             x = list(original_metrics[2]),
             y = list(original_metrics[3]),
             mode = "lines",

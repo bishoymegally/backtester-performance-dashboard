@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import yfinance as yf
 import matplotlib.pyplot as plt
@@ -5,19 +7,20 @@ import plotly.graph_objects as go
 from data_definition import *
 #imported outside stuff first
 
+ 
 
 #Define a class to handle the data, including validation and retrieval of prices
 class Data:
 
-    def __init__(self, prices, dates, assets):
-        self.is_valid_data(prices)
-        self.prices = prices
+    def __init__(self, data, dates, assets):
+        self.is_valid_data(data) 
+        self.prices, self.highs, self.lows = data
         self.dates = dates
         self.assets = assets
 
 #Validate the data to ensure it's a numpy array and has no NaN values
     def is_valid_data(self, data):
-        if not isinstance(data, np.ndarray):
+        if not isinstance(data, list) and False:
             raise TypeError("Array must be numpy array")
         elif np.any(np.isnan(data)):
             raise ValueError("Prices Array shouldn't have any NAN values")
@@ -32,9 +35,24 @@ class Data:
 class Strategy:
     def __init__(self):
         self.history = []
+        self.highs = []
+        self.lows = []
+        self.TR = []
+        self.ATR = []
+
     
-    def  update_history(self, price):
-        self.history.append(price) 
+    def  update_history(self, price, high, low):
+        self.history.append(price)
+        self.highs.append(high)
+        self.lows.append(low) 
+        if len(self.history) > 1:
+            range_1 = self.highs[-1] - self.lows[-1]
+            range_2 = self.highs[-1] - self.history[-2]
+            range_3 = self.lows[-1] - self.history[-2]
+            true_range = max([range_1, range_2, range_3])
+            self.TR.append(true_range)
+        if len(self.TR) >= 14:
+            self.ATR.append(np.mean(self.TR[-14:]))
 #Strategy Checks if 5 day MA is greater than 20 day and places an order
 class MovingAverage(Strategy):
     def __init__(self, fast, slow):
@@ -43,13 +61,17 @@ class MovingAverage(Strategy):
         self.slow = slow
 
     def get_signal(self, in_position = False):
+        if len(self.history) < self.slow or len(self.ATR) < 2:
+            return {
+                "action": None
+            }
         
-        if self.meets_criteria(fast=self.fast, slow=self.slow) and not in_position:
+        if self.buy_criteria(fast=self.fast, slow=self.slow) and not in_position:
             return{
                 'price':self.history[-1],
                 'action': 'buy'
             }
-        elif not self.meets_criteria(fast= self.fast, slow= self.slow) and in_position:
+        elif self.sell_criteria(fast= self.fast, slow= self.slow) and in_position:
             return {
                 'price':self.history[-1],
                 'action': 'sell'
@@ -58,11 +80,35 @@ class MovingAverage(Strategy):
             return {
                 'action': None
                 }
-            
-    def meets_criteria(self, fast = 5, slow = 20):
-        if len(self.history) < slow:
+
+    def ATR_Checker(self):
+        if len(self.ATR) < 2:
+            return 0.0
+        lookback = min(50, len(self.ATR))
+        ATR_MA = np.mean(self.ATR[-lookback:])
+        if ATR_MA == 0:
+            return 0.0
+        return self.ATR[-1] / ATR_MA
+
+
+    
+
+    def buy_criteria(self, fast = 5, slow = 20):
+        buy = False
+        if len(self.history) < slow or len(self.ATR) < 2:
+            return buy
+        if np.mean(self.history[-fast:]) > np.mean(self.history[-slow:]) and self.ATR_Checker() > 1.2:
+            buy = True
+        return buy 
+    
+    def sell_criteria(self, fast, slow):
+        sell = False
+        if len(self.ATR) < 2:
             return False
-        return np.mean(self.history[-fast:]) > np.mean(self.history[-slow:])
+        if not np.mean(self.history[-fast:]) > np.mean(self.history[-slow:]) or self.ATR_Checker() < 0.7:
+            sell = True
+        return sell
+
 
 class Portfolio:
     
@@ -278,7 +324,7 @@ class Execution:
         self.trades = []
 
     def validate(self, data, balance, weights, strategy):
-        if not isinstance(data, np.ndarray):
+        if not isinstance(data, list) and False:
             raise TypeError("Prices must be turned into a numpy array")
         else:
             print('Valid Data')
@@ -322,13 +368,17 @@ class Execution:
             self.current_trade = {}
             self.in_position = False
             self.index_equity = 0.0
-            strategy = self.strategy_class
+            strategy = copy.deepcopy(self.strategy_class)
             if hasattr(strategy, "history"):
                 strategy.history = []
+                strategy.highs = []
+                strategy.lows = []
+                strategy.TR = []
+                strategy.ATR = []
             day = -1
             while data.has_next(day):
                 day += 1
-                strategy.update_history(data.prices[day, asset])
+                strategy.update_history(data.prices[day, asset], data.highs[day, asset], data.lows[day, asset])
 
                 if self.in_position:
                     price_now = data.prices[day, asset]
